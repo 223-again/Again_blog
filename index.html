@@ -968,28 +968,26 @@
     pubBtn.disabled = true;
     pubBtn.textContent = admEditIdx >= 0 ? '保存中…' : '发布中…';
 
+    const isEdit = admEditIdx >= 0;
+    const editIdx = admEditIdx; // 保存快照，避免异步后被清掉
+    const commitMsg = isEdit ? `编辑文章：${title}` : `新文章：${title}`;
+
     try {
-      const { content: current, sha } = await admGitFetch();
-      let allPosts = extractPostsFromFile(current);
-      const commitMsg = admEditIdx >= 0
-        ? `编辑文章：${title}`
-        : `新文章：${title}`;
+      await admGitWrite(current => {
+        const allPosts = extractPostsFromFile(current);
+        if (isEdit) {
+          if (allPosts[editIdx] && allPosts[editIdx].big) newPost.big = true;
+          allPosts[editIdx] = newPost;
+        } else {
+          allPosts.unshift(newPost);
+        }
+        return replacePostsInFile(current, allPosts);
+      }, commitMsg);
 
-      if (admEditIdx >= 0) {
-        // 保留原始 big 属性
-        if (allPosts[admEditIdx] && allPosts[admEditIdx].big) newPost.big = true;
-        allPosts[admEditIdx] = newPost;
-      } else {
-        allPosts.unshift(newPost);
-      }
-
-      const updated = replacePostsInFile(current, allPosts);
-      await admGitCommit(updated, sha, commitMsg);
-
-      okEl.textContent = admEditIdx >= 0 ? '✓ 修改已保存！约 1 分钟后生效。' : '✓ 发布成功！约 1 分钟后生效。';
+      okEl.textContent = isEdit ? '✓ 修改已保存！约 1 分钟后生效。' : '✓ 发布成功！约 1 分钟后生效。';
       admEditIdx = -1;
       admClearEditor();
-      okEl.textContent = admEditIdx >= 0 ? '✓ 修改已保存！约 1 分钟后生效。' : '✓ 发布成功！约 1 分钟后生效。';
+      okEl.textContent = isEdit ? '✓ 修改已保存！约 1 分钟后生效。' : '✓ 发布成功！约 1 分钟后生效。';
 
     } catch (e) {
       errEl.textContent = e.message || '操作失败，请重试';
@@ -1015,21 +1013,28 @@
     };
   }
 
-  async function admGitCommit(content, sha, message) {
+  // admGitWrite: 用 contentFn 转换文件内容后提交，409冲突时自动重新拉取最新SHA并重试
+  async function admGitWrite(contentFn, message) {
     const token = localStorage.getItem('admToken');
     const repo  = localStorage.getItem('admRepo');
-    const res = await fetch(`https://api.github.com/repos/${repo}/contents/index.html`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `token ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ message, content: toBase64(content), sha })
-    });
-    if (res.status === 409) throw new Error('文件冲突，请稍后重试');
-    if (res.status === 403) throw new Error('提交失败（403），请检查 Token 权限');
-    if (!res.ok) throw new Error(`提交失败（${res.status}）`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { content, sha } = await admGitFetch();
+      const updated = contentFn(content);
+      const res = await fetch(`https://api.github.com/repos/${repo}/contents/index.html`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message, content: toBase64(updated), sha })
+      });
+      if (res.ok) return;
+      if (res.status === 409 && attempt < 2) continue; // SHA过期，重新拉取再试
+      if (res.status === 403) throw new Error('提交失败（403），请检查 Token 写权限');
+      throw new Error(`提交失败（${res.status}）`);
+    }
+    throw new Error('连续冲突，请稍后重试');
   }
 
   // --- 从文件内容提取 posts 数组 ---
@@ -1147,13 +1152,17 @@
     btn.disabled = true;
     btn.textContent = '删除中…';
     try {
-      const { content, sha } = await admGitFetch();
-      const allPosts = extractPostsFromFile(content);
-      const title = allPosts[idx]?.title || '文章';
-      allPosts.splice(idx, 1);
-      const updated = replacePostsInFile(content, allPosts);
-      await admGitCommit(updated, sha, `删除文章：${title}`);
-      // 刷新列表
+      // 先读一次拿标题，再通过 admGitWrite 确保无冲突地删除
+      const { content: snapshot } = await admGitFetch();
+      const snapshotPosts = extractPostsFromFile(snapshot);
+      const title = snapshotPosts[idx]?.title || '文章';
+
+      await admGitWrite(current => {
+        const allPosts = extractPostsFromFile(current);
+        allPosts.splice(idx, 1);
+        return replacePostsInFile(current, allPosts);
+      }, `删除文章：${title}`);
+
       await admOpenManage();
     } catch(e) {
       errEl.textContent = e.message || '删除失败，请重试';
