@@ -312,6 +312,20 @@
   .btn-ghost:hover { background:var(--indigo); color:#fff; border-color:transparent; }
   .adm-divider { border:none; border-top:1px solid var(--glass-border); margin:32px 0; }
   .adm-small-link { font-size:13px; color:var(--indigo); cursor:pointer; text-decoration:underline; }
+  /* Manage screen */
+  .adm-list { display:flex; flex-direction:column; gap:12px; }
+  .adm-item { display:flex; align-items:center; gap:16px; padding:16px 20px; background:var(--glass); border:1px solid var(--glass-border); border-radius:16px; backdrop-filter:blur(14px); }
+  .adm-item-info { flex:1; min-width:0; }
+  .adm-item-title { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .adm-item-meta { font-size:13px; color:var(--ink-mute); margin-top:3px; }
+  .adm-item-actions { display:flex; gap:8px; flex-shrink:0; }
+  .btn-sm { padding:7px 15px; border-radius:10px; font-family:var(--font); font-size:13px; font-weight:700; cursor:pointer; background:var(--glass); border:1px solid var(--glass-border); transition:background .2s,color .2s; }
+  .btn-sm.edit { color:var(--indigo); } .btn-sm.edit:hover { background:var(--indigo); color:#fff; border-color:transparent; }
+  .btn-sm.del  { color:#f43f5e; }  .btn-sm.del:hover  { background:#f43f5e; color:#fff; border-color:transparent; }
+  .adm-loading { text-align:center; color:var(--ink-mute); padding:40px 0; font-size:15px; }
+  .adm-tabs { display:flex; gap:8px; margin-bottom:28px; }
+  .adm-tab { padding:8px 20px; border-radius:999px; font-family:var(--font); font-size:14px; font-weight:700; cursor:pointer; background:var(--glass); border:1px solid var(--glass-border); color:var(--ink-soft); transition:all .2s; }
+  .adm-tab.active { background:var(--indigo); color:#fff; border-color:transparent; }
 </style>
 </head>
 <body>
@@ -528,10 +542,25 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           发布文章
         </button>
+        <button class="btn-ghost" onclick="admOpenManage()">管理文章</button>
         <button class="btn-ghost" onclick="closeAdmin()">关闭</button>
       </div>
       <p class="adm-err" id="edErr"></p>
       <p class="adm-ok"  id="edOk"></p>
+    </div>
+
+    <!-- ④ Manage posts -->
+    <div id="admManage" class="adm-screen">
+      <div class="adm-logo">✦ 后台管理 <span>管理文章</span></div>
+      <div class="adm-btns" style="margin-bottom:28px;">
+        <button class="btn-pub" onclick="admShowScreen('admEditor');admClearEditor()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          写新文章
+        </button>
+        <button class="btn-ghost" onclick="closeAdmin()">关闭</button>
+      </div>
+      <div id="admPostList"><p class="adm-loading">加载中…</p></div>
+      <p class="adm-err" id="manageErr"></p>
     </div>
 
   </div>
@@ -823,11 +852,14 @@
   }
 
   function admShowScreen(id) {
-    ['admSetup','admLogin','admEditor'].forEach(s => {
+    ['admSetup','admLogin','admEditor','admManage'].forEach(s => {
       document.getElementById(s).classList.remove('adm-active');
     });
     document.getElementById(id).classList.add('adm-active');
   }
+
+  // --- 编辑状态：-1 = 新文章；≥0 = 编辑第 N 篇 ---
+  let admEditIdx = -1;
 
   // --- 密码哈希 (SHA-256) ---
   async function hashPwd(pwd) {
@@ -894,6 +926,7 @@
 
   // --- 清空编辑器 ---
   function admClearEditor() {
+    admEditIdx = -1;
     document.getElementById('edTitle').value   = '';
     document.getElementById('edExcerpt').value = '';
     document.getElementById('edBody').value    = '';
@@ -901,6 +934,7 @@
     document.getElementById('edErr').textContent = '';
     document.getElementById('edOk').textContent  = '';
     document.getElementById('pubBtn').disabled = false;
+    document.getElementById('pubBtn').innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg> 发布文章';
     setTimeout(() => document.getElementById('edTitle').focus(), 100);
   }
 
@@ -973,56 +1007,199 @@
     };
 
     pubBtn.disabled = true;
-    pubBtn.textContent = '发布中…';
-
-    const token = localStorage.getItem('admToken');
-    const repo  = localStorage.getItem('admRepo');
+    pubBtn.textContent = admEditIdx >= 0 ? '保存中…' : '发布中…';
 
     try {
-      // 1. 获取当前文件
-      const getRes = await fetch(`https://api.github.com/repos/${repo}/contents/index.html`, {
-        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
-      });
-      if (!getRes.ok) throw new Error(`读取文件失败（${getRes.status}）`);
-      const fileData = await getRes.json();
-      const sha      = fileData.sha;
-      const current  = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g,''))));
+      const { content: current, sha } = await admGitFetch();
+      let allPosts = extractPostsFromFile(current);
+      const commitMsg = admEditIdx >= 0
+        ? `编辑文章：${title}`
+        : `新文章：${title}`;
 
-      // 2. 将新文章插入 posts 数组最前面
-      const marker = 'const posts = [';
-      const idx    = current.indexOf(marker);
-      if (idx === -1) throw new Error('未找到 posts 数组，请检查 index.html 格式');
+      if (admEditIdx >= 0) {
+        // 保留原始 big 属性
+        if (allPosts[admEditIdx] && allPosts[admEditIdx].big) newPost.big = true;
+        allPosts[admEditIdx] = newPost;
+      } else {
+        allPosts.unshift(newPost);
+      }
 
-      const postLine = '\n    ' + JSON.stringify(newPost) + ',';
-      const updated  = current.slice(0, idx + marker.length) + postLine + current.slice(idx + marker.length);
+      const updated = replacePostsInFile(current, allPosts);
+      await admGitCommit(updated, sha, commitMsg);
 
-      // 3. 提交到 GitHub
-      const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/index.html`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3+json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: `新文章：${title}`,
-          content: toBase64(updated),
-          sha
-        })
-      });
-
-      if (putRes.status === 409) throw new Error('文件冲突，请稍后重试');
-      if (!putRes.ok) throw new Error(`提交失败（${putRes.status}）`);
-
-      okEl.textContent = '✓ 发布成功！网站将在约 1 分钟内更新。';
+      okEl.textContent = admEditIdx >= 0 ? '✓ 修改已保存！约 1 分钟后生效。' : '✓ 发布成功！约 1 分钟后生效。';
+      admEditIdx = -1;
       admClearEditor();
-      okEl.textContent = '✓ 发布成功！网站将在约 1 分钟内更新。';
+      okEl.textContent = admEditIdx >= 0 ? '✓ 修改已保存！约 1 分钟后生效。' : '✓ 发布成功！约 1 分钟后生效。';
 
     } catch (e) {
-      errEl.textContent = e.message || '发布失败，请重试';
+      errEl.textContent = e.message || '操作失败，请重试';
     } finally {
       pubBtn.disabled = false;
-      pubBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>发布文章';
+      pubBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' + (admEditIdx >= 0 ? ' 保存修改' : ' 发布文章');
+    }
+  }
+
+  // --- GitHub 工具函数 ---
+  async function admGitFetch() {
+    const token = localStorage.getItem('admToken');
+    const repo  = localStorage.getItem('admRepo');
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/index.html`, {
+      headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
+    });
+    if (res.status === 401) throw new Error('Token 已过期，请重置配置');
+    if (!res.ok) throw new Error(`读取文件失败（${res.status}）`);
+    const data = await res.json();
+    return {
+      content: decodeURIComponent(escape(atob(data.content.replace(/\n/g,'')))),
+      sha: data.sha
+    };
+  }
+
+  async function admGitCommit(content, sha, message) {
+    const token = localStorage.getItem('admToken');
+    const repo  = localStorage.getItem('admRepo');
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/index.html`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message, content: toBase64(content), sha })
+    });
+    if (res.status === 409) throw new Error('文件冲突，请稍后重试');
+    if (res.status === 403) throw new Error('提交失败（403），请检查 Token 权限');
+    if (!res.ok) throw new Error(`提交失败（${res.status}）`);
+  }
+
+  // --- 从文件内容提取 posts 数组 ---
+  function extractPostsFromFile(content) {
+    const s = content.indexOf('// ---------- Posts data ----------');
+    const e = content.indexOf('// ---------- Render ----------');
+    if (s === -1 || e === -1) throw new Error('文件格式不正确，找不到 Posts 区块');
+    const block = content.slice(s, e);
+    const m = block.match(/const posts = (\[[\s\S]*\]);/);
+    if (!m) throw new Error('未找到 posts 数组');
+    return new Function('return ' + m[1])();
+  }
+
+  // --- 将 posts 数组写回文件 ---
+  function replacePostsInFile(content, postsArr) {
+    const s = content.indexOf('// ---------- Posts data ----------');
+    const e = content.indexOf('// ---------- Render ----------');
+    if (s === -1 || e === -1) throw new Error('文件格式不正确');
+    const postsJs = postsArr.map(p => '    ' + JSON.stringify(p)).join(',\n');
+    const newBlock = `// ---------- Posts data ----------\n  const posts = [\n${postsJs},\n  ];\n\n  `;
+    return content.slice(0, s) + newBlock + content.slice(e);
+  }
+
+  // --- body 数组转回可编辑文本 ---
+  function bodyToText(body) {
+    return (body || []).map(([tag, html]) => {
+      if (tag === 'h2')         return '## ' + html;
+      if (tag === 'blockquote') return '> ' + html;
+      if (tag === 'pre') {
+        const code = html.replace(/^<code>/, '').replace(/<\/code>$/, '')
+                         .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        return '```\n' + code + '\n```';
+      }
+      return html.replace(/<[^>]+>/g, ''); // p — 去掉行内标签
+    }).join('\n\n');
+  }
+
+  // --- 管理文章列表 ---
+  async function admOpenManage() {
+    admShowScreen('admManage');
+    const listEl = document.getElementById('admPostList');
+    const errEl  = document.getElementById('manageErr');
+    listEl.innerHTML = '<p class="adm-loading">加载中…</p>';
+    errEl.textContent = '';
+
+    try {
+      const { content } = await admGitFetch();
+      const allPosts = extractPostsFromFile(content);
+
+      if (!allPosts.length) {
+        listEl.innerHTML = '<p class="adm-loading">还没有文章，去写第一篇吧。</p>';
+        return;
+      }
+
+      const catColor = { essay:'var(--pink)', tech:'var(--indigo)', life:'#F59E0B' };
+      listEl.innerHTML = '';
+      const ul = document.createElement('div');
+      ul.className = 'adm-list';
+
+      allPosts.forEach((p, i) => {
+        const item = document.createElement('div');
+        item.className = 'adm-item';
+        item.innerHTML = `
+          <div style="width:8px;height:8px;border-radius:50%;background:${catColor[p.cat]||'var(--indigo)'};flex-shrink:0;"></div>
+          <div class="adm-item-info">
+            <div class="adm-item-title">${p.title}</div>
+            <div class="adm-item-meta">${p.catName} · ${p.date} · ${p.read}</div>
+          </div>
+          <div class="adm-item-actions">
+            <button class="btn-sm edit" onclick="admEditPost(${i})">编辑</button>
+            <button class="btn-sm del"  onclick="admDeletePost(${i}, this)">删除</button>
+          </div>`;
+        ul.appendChild(item);
+      });
+
+      listEl.appendChild(ul);
+    } catch(e) {
+      listEl.innerHTML = '';
+      errEl.textContent = e.message || '加载失败，请重试';
+    }
+  }
+
+  // --- 编辑某篇文章 ---
+  async function admEditPost(idx) {
+    const errEl = document.getElementById('manageErr');
+    errEl.textContent = '加载中…';
+    try {
+      const { content } = await admGitFetch();
+      const allPosts = extractPostsFromFile(content);
+      const p = allPosts[idx];
+      if (!p) throw new Error('文章不存在');
+
+      admEditIdx = idx;
+      document.getElementById('edTitle').value   = p.title   || '';
+      document.getElementById('edExcerpt').value = p.excerpt || '';
+      document.getElementById('edCat').value     = p.cat     || 'essay';
+      document.getElementById('edBody').value    = bodyToText(p.body);
+      document.getElementById('edErr').textContent = '';
+      document.getElementById('edOk').textContent  = '';
+      document.getElementById('pubBtn').innerHTML =
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg> 保存修改';
+
+      errEl.textContent = '';
+      admShowScreen('admEditor');
+    } catch(e) {
+      errEl.textContent = e.message || '加载失败';
+    }
+  }
+
+  // --- 删除某篇文章 ---
+  async function admDeletePost(idx, btn) {
+    if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+    const errEl = document.getElementById('manageErr');
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = '删除中…';
+    try {
+      const { content, sha } = await admGitFetch();
+      const allPosts = extractPostsFromFile(content);
+      const title = allPosts[idx]?.title || '文章';
+      allPosts.splice(idx, 1);
+      const updated = replacePostsInFile(content, allPosts);
+      await admGitCommit(updated, sha, `删除文章：${title}`);
+      // 刷新列表
+      await admOpenManage();
+    } catch(e) {
+      errEl.textContent = e.message || '删除失败，请重试';
+      btn.disabled = false;
+      btn.textContent = '删除';
     }
   }
 </script>
