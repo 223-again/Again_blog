@@ -694,7 +694,7 @@
 
   // ---------- Posts data ----------
   const posts = [
-    {"cat":"tech","catName":"技术","date":"2026-07-10","read":"1 分钟","title":"部署claude code，并且使用cc switch接入各类大模型","excerpt":"windows系统下，具体步骤安装claude code，这是一个安装在你终端里的ai助手","body":[["p","##部署 claude code"],["p","##1"],["p","下载Node.js"],["p","前往>https://nodejs.org/zh-cn 下载node.js，直接下载即可"],["p","```node --version"],["p","npm --version```"],["p","检查node.js是否安装完成"],["p","##2"],["p","安装git"],["p","前往>https://git-scm.com/ 不做版本要求"],["p","```git --version```"],["p","查看git是否安装好"],["p","##3"],["p","安装claude code"],["p","Windows系统下通过powershell安装"],["p","```##以管理员身份打开powershell"],["p","npm install -g @anthropic-ai claude-code"],["p","#验证安装"],["p","claude --version  ```"],["p","这样就安装完了，一般情况需要修改配置，因为不能访问外网，但本人推荐使用cc switch  接入deepseek v4 pro（性价比之王）或者中转站使用外国模型。"]]},
+    {"cat":"tech","catName":"技术","date":"2026-07-10","read":"1 分钟","title":"部署claude code，并且使用cc switch接入各类大模型","excerpt":"windows系统下，具体步骤安装claude code，这是一个安装在你终端里的ai助手","body":[["h2","部署 claude code"],["h2","1"],["p","下载Node.js"],["p","前往>https://nodejs.org/zh-cn 下载node.js，直接下载即可"],["pre","<code>node --version\nnpm --version</code>"],["p","检查node.js是否安装完成"],["h2","2"],["p","安装git"],["p","前往>https://git-scm.com/ 不做版本要求"],["pre","<code>git --version</code>"],["p","查看git是否安装好"],["h2","3"],["p","安装claude code"],["p","Windows系统下通过powershell安装"],["pre","<code>##以管理员身份打开powershell\nnpm install -g @anthropic-ai claude-code\n#验证安装\nclaude --version</code>"],["p","这样就安装完了，一般情况需要修改配置，因为不能访问外网，但本人推荐使用cc switch  接入deepseek v4 pro（性价比之王）或者中转站使用外国模型。"]]},
     {"cat":"tech","catName":"技术","date":"2026-06-28","read":"12 分钟","title":"JavaScript 里那些容易踩的闭包坑","excerpt":"闭包是 JS 的强大特性，也是 bug 的高发地。聊聊循环里的 var、事件回调与内存泄漏。","body":[["p","闭包让函数记住它出生时的环境。但这份“记忆”用不好，就会带来意料之外的行为。"],["h2","经典的循环陷阱"],["p","下面这段代码，很多人第一次都会答错："],["pre","<code>for (var i = 0; i < 3; i++) {\n  setTimeout(() => console.log(i), 0);\n}\n// 输出：3 3 3</code>"],["p","原因是 <code>var</code> 没有块级作用域，三个回调共享同一个 <code>i</code>。把 <code>var</code> 换成 <code>let</code>，每次迭代都会创建新的绑定，输出就变成 0 1 2。"],["blockquote","理解作用域，是理解闭包的前提。"]]},
   ];
 
@@ -897,30 +897,30 @@
   }
 
   // --- 解析正文为 body 数组 ---
+  // 规则更宽松：``` 之间的内容一律视为代码块（可跨行、可与内容写在同一行，
+  //   如 ```node --version 或 git --version```）；# ~ ###### 开头视为标题（# 后可有可无空格）；
+  //   > 开头视为引用；其余为段落，空行分段。
   function parseBody(text) {
     const body = [];
-    let inCode = false, codeBuf = [];
+    const escapeHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    text.split('\n').forEach(line => {
-      if (line.trim() === '```') {
-        if (inCode) {
-          body.push(['pre', '<code>' + codeBuf.join('\n').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code>']);
-          codeBuf = []; inCode = false;
-        } else { inCode = true; }
-        return;
+    // 以 ``` 为界切分：下标为奇数的片段即代码；未闭合时最后一段代码同样成块。
+    const segments = text.split('```');
+    segments.forEach((seg, i) => {
+      if (i % 2 === 1) {
+        const code = seg.replace(/^\n+/, '').replace(/\n+$/, '');
+        if (code.trim() === '') return;
+        body.push(['pre', '<code>' + escapeHtml(code) + '</code>']);
+      } else {
+        seg.split('\n').forEach(line => {
+          const t = line.trim();
+          if (t === '') return; // 空行跳过
+          if (/^#{1,6}/.test(t)) { body.push(['h2', t.replace(/^#{1,6}\s*/, '')]); return; }
+          if (/^>/.test(t))      { body.push(['blockquote', t.replace(/^>\s*/, '')]); return; }
+          body.push(['p', t]);
+        });
       }
-      if (inCode) { codeBuf.push(line); return; }
-
-      if (/^##\s+/.test(line))  { body.push(['h2', line.replace(/^##\s+/, '')]); return; }
-      if (/^>\s+/.test(line))   { body.push(['blockquote', line.replace(/^>\s+/, '')]); return; }
-      if (line.trim() === '')   return; // 空行跳过
-      body.push(['p', line.trim()]);
     });
-
-    // 未关闭的代码块
-    if (inCode && codeBuf.length) {
-      body.push(['pre', '<code>' + codeBuf.join('\n').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</code>']);
-    }
     return body;
   }
 
