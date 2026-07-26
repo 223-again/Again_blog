@@ -246,6 +246,9 @@
   .article pre { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 20px; overflow-x: auto; margin: 24px 0; font-family: var(--mono); font-size: 14px; line-height: 1.7; }
   .article code { font-family: var(--mono); font-size: .9em; background: var(--glass); padding: 2px 6px; border-radius: 6px; }
   .article pre code { background: none; padding: 0; }
+  .article figure { margin: 28px 0; }
+  .article figure img { width: 100%; border-radius: 16px; box-shadow: var(--shadow); }
+  .article figure figcaption { text-align: center; font-size: 14px; color: var(--ink-mute); margin-top: 10px; }
 
   /* ---------- Footer ---------- */
   footer { text-align: center; padding: 40px 0; color: var(--ink-mute); font-size: 14px; }
@@ -326,6 +329,16 @@
   .adm-tabs { display:flex; gap:8px; margin-bottom:28px; }
   .adm-tab { padding:8px 20px; border-radius:999px; font-family:var(--font); font-size:14px; font-weight:700; cursor:pointer; background:var(--glass); border:1px solid var(--glass-border); color:var(--ink-soft); transition:all .2s; }
   .adm-tab.active { background:var(--indigo); color:#fff; border-color:transparent; }
+  /* Editor toolbar */
+  .adm-toolbar { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .adm-tool { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:12px; font-family:var(--font); font-size:13px; font-weight:700; cursor:pointer; background:var(--glass); border:1px solid var(--glass-border); color:var(--ink-soft); transition:background .2s,color .2s; }
+  .adm-tool:hover { background:var(--indigo); color:#fff; border-color:transparent; }
+  .adm-tool:disabled { opacity:.55; cursor:not-allowed; }
+  .adm-tool svg { width:16px; height:16px; }
+  /* Avatar uploader */
+  .adm-avatar-row { display:flex; align-items:center; gap:20px; margin-bottom:10px; }
+  .adm-avatar-preview { width:88px; height:88px; flex-shrink:0; border-radius:22px; background:linear-gradient(135deg, var(--indigo), var(--purple)); display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:900; color:#fff; overflow:hidden; }
+  .adm-avatar-preview img { width:100%; height:100%; object-fit:cover; }
 </style>
 </head>
 <body>
@@ -526,6 +539,13 @@
       </div>
       <div class="adm-field">
         <label>正文</label>
+        <div class="adm-toolbar">
+          <button type="button" class="adm-tool" id="imgBtn" onclick="admInsertImage()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+            插入图片
+          </button>
+          <input type="file" id="imgFile" accept="image/*" style="display:none" onchange="admUploadImage(this)" />
+        </div>
         <textarea id="edBody" placeholder="在这里写正文…
 
 格式提示：
@@ -535,7 +555,7 @@
 • ``` 代码 ``` → 代码块（单独一行三个反引号开始/结束）
 
 空行分段。"></textarea>
-        <p class="adm-hint">支持：段落 / <code>## 标题</code> / <code>&gt; 引用</code> / 代码块（三个反引号包裹）</p>
+        <p class="adm-hint">支持：段落 / <code>## 标题</code> / <code>&gt; 引用</code> / 代码块（三个反引号包裹） / 图片 <code>![说明](图片地址)</code>（点上方按钮可直接上传）</p>
       </div>
       <div class="adm-btns">
         <button class="btn-pub" id="pubBtn" onclick="admPublish()">
@@ -543,6 +563,7 @@
           发布文章
         </button>
         <button class="btn-ghost" onclick="admOpenManage()">管理文章</button>
+        <button class="btn-ghost" onclick="admOpenSettings()">站点设置</button>
         <button class="btn-ghost" onclick="closeAdmin()">关闭</button>
       </div>
       <p class="adm-err" id="edErr"></p>
@@ -561,6 +582,39 @@
       </div>
       <div id="admPostList"><p class="adm-loading">加载中…</p></div>
       <p class="adm-err" id="manageErr"></p>
+    </div>
+
+    <!-- ⑤ Site settings -->
+    <div id="admSettings" class="adm-screen">
+      <div class="adm-logo">✦ 后台管理 <span>站点设置</span></div>
+      <h1 class="adm-h1">头像与资料</h1>
+      <p class="adm-sub">上传头像后会保存到仓库，约 1 分钟后全站生效。</p>
+
+      <div class="adm-field">
+        <label>头像</label>
+        <div class="adm-avatar-row">
+          <div class="adm-avatar-preview" id="setAvatarPreview">A</div>
+          <div class="adm-btns" style="margin:0;">
+            <button type="button" class="btn-ghost" onclick="document.getElementById('avatarFile').click()">上传图片</button>
+            <button type="button" class="btn-ghost" id="avatarClearBtn" onclick="admClearAvatar()">恢复文字头像</button>
+          </div>
+          <input type="file" id="avatarFile" accept="image/*" style="display:none" onchange="admUploadAvatar(this)" />
+        </div>
+        <p class="adm-hint">建议使用正方形图片（例如 400×400），支持 jpg / png / webp / gif。</p>
+      </div>
+      <div class="adm-field">
+        <label>文字头像（未设置图片时显示）</label>
+        <input id="setAvatarText" type="text" maxlength="2" placeholder="例如 A" />
+      </div>
+      <div class="adm-btns">
+        <button class="btn-pub" id="settingsSaveBtn" onclick="admSaveSettings()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+          保存设置
+        </button>
+        <button class="btn-ghost" onclick="admShowScreen('admEditor')">返回</button>
+      </div>
+      <p class="adm-err" id="settingsErr"></p>
+      <p class="adm-ok"  id="settingsOk"></p>
     </div>
 
   </div>
@@ -630,6 +684,7 @@
       avatar.style.padding = '0';
     } else {
       avatar.textContent = CONFIG.avatarText;
+      avatar.style.padding = '';
     }
     document.getElementById('heroName').textContent = CONFIG.nickname;
     document.getElementById('heroBio').textContent = CONFIG.bio;
@@ -694,8 +749,8 @@
 
   // ---------- Posts data ----------
   const posts = [
-    {"cat":"tech","catName":"技术","date":"2026-07-10","read":"1 分钟","title":"部署claude code，并且使用cc switch接入各类大模型","excerpt":"windows系统下，具体步骤安装claude code，这是一个安装在你终端里的ai助手","body":[["h2","部署 claude code"],["h2","1"],["p","下载Node.js"],["p","前往>https://nodejs.org/zh-cn 下载node.js，直接下载即可"],["pre","<code>node --version\nnpm --version</code>"],["p","检查node.js是否安装完成"],["h2","2"],["p","安装git"],["p","前往>https://git-scm.com/ 不做版本要求"],["pre","<code>git --version</code>"],["p","查看git是否安装好"],["h2","3"],["p","安装claude code"],["p","Windows系统下通过powershell安装"],["pre","<code>##以管理员身份打开powershell\nnpm install -g @anthropic-ai claude-code\n#验证安装\nclaude --version</code>"],["p","这样就安装完了，一般情况需要修改配置，因为不能访问外网，但本人推荐使用cc switch  接入deepseek v4 pro（性价比之王）或者中转站使用外国模型。"]]},
-    {"cat":"tech","catName":"技术","date":"2026-06-28","read":"12 分钟","title":"JavaScript 里那些容易踩的闭包坑","excerpt":"闭包是 JS 的强大特性，也是 bug 的高发地。聊聊循环里的 var、事件回调与内存泄漏。","body":[["p","闭包让函数记住它出生时的环境。但这份“记忆”用不好，就会带来意料之外的行为。"],["h2","经典的循环陷阱"],["p","下面这段代码，很多人第一次都会答错："],["pre","<code>for (var i = 0; i < 3; i++) {\n  setTimeout(() => console.log(i), 0);\n}\n// 输出：3 3 3</code>"],["p","原因是 <code>var</code> 没有块级作用域，三个回调共享同一个 <code>i</code>。把 <code>var</code> 换成 <code>let</code>，每次迭代都会创建新的绑定，输出就变成 0 1 2。"],["blockquote","理解作用域，是理解闭包的前提。"]]},
+    {"cat":"tech","catName":"技术","date":"2026-07-10","read":"1 分钟","title":"部署claude code，并且使用cc switch接入各类大模型","excerpt":"windows系统下，具体步骤安装claude code，这是一个安装在你终端里的ai助手","body":[["h2","部署 claude code"],["h2","1"],["p","下载Node.js"],["p","前往&gt;https://nodejs.org/zh-cn 下载node.js，直接下载即可"],["pre","<code>node --version\nnpm --version</code>"],["p","检查node.js是否安装完成"],["h2","2"],["p","安装git"],["p","前往&gt;https://git-scm.com/ 不做版本要求"],["pre","<code>git --version</code>"],["p","查看git是否安装好"],["h2","3"],["p","安装claude code"],["p","Windows系统下通过powershell安装"],["pre","<code>##以管理员身份打开powershell\nnpm install -g @anthropic-ai claude-code\n#验证安装\nclaude --version</code>"],["p","这样就安装完了，一般情况需要修改配置，因为不能访问外网，但本人推荐使用cc switch  接入deepseek v4 pro（性价比之王）或者中转站使用外国模型。"]]},
+    {"cat":"tech","catName":"技术","date":"2026-06-28","read":"1 分钟","title":"JavaScript 里那些容易踩的闭包坑","excerpt":"闭包是 JS 的强大特性，也是 bug 的高发地。聊聊循环里的 var、事件回调与内存泄漏。","body":[["p","闭包让函数记住它出生时的环境。但这份“记忆”用不好，就会带来意料之外的行为。"],["h2","经典的循环陷阱"],["p","下面这段代码，很多人第一次都会答错："],["pre","<code>for (var i = 0; i &lt; 3; i++) {\n  setTimeout(() =&gt; console.log(i), 0);\n}\n// 输出：3 3 3</code>"],["p","原因是 <code>var</code> 没有块级作用域，三个回调共享同一个 <code>i</code>。把 <code>var</code> 换成 <code>let</code>，每次迭代都会创建新的绑定，输出就变成 0 1 2。"],["blockquote","理解作用域，是理解闭包的前提。"]]},
   ];
 
   // ---------- Render ----------
@@ -810,7 +865,7 @@
   }
 
   function admShowScreen(id) {
-    ['admSetup','admLogin','admEditor','admManage'].forEach(s => {
+    ['admSetup','admLogin','admEditor','admManage','admSettings'].forEach(s => {
       document.getElementById(s).classList.remove('adm-active');
     });
     document.getElementById(id).classList.add('adm-active');
@@ -915,6 +970,14 @@
         seg.split('\n').forEach(line => {
           const t = line.trim();
           if (t === '') return; // 空行跳过
+          const img = t.match(/^!\[([^\]]*)\]\(([^)]+)\)$/); // ![说明](地址)
+          if (img) {
+            const alt = escapeHtml(img[1]);
+            const src = escapeHtml(img[2].trim());
+            const cap = img[1] ? `<figcaption>${alt}</figcaption>` : '';
+            body.push(['figure', `<img src="${src}" alt="${alt}" loading="lazy">${cap}`]);
+            return;
+          }
           if (/^#{1,6}/.test(t)) { body.push(['h2', t.replace(/^#{1,6}\s*/, '')]); return; }
           if (/^>/.test(t))      { body.push(['blockquote', t.replace(/^>\s*/, '')]); return; }
           body.push(['p', t]);
@@ -1067,6 +1130,12 @@
                          .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
         return '```\n' + code + '\n```';
       }
+      if (tag === 'figure') {
+        const srcM = html.match(/<img[^>]*\bsrc="([^"]*)"/);
+        const altM = html.match(/<img[^>]*\balt="([^"]*)"/);
+        const unesc = s => (s || '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+        return `![${unesc(altM && altM[1])}](${unesc(srcM && srcM[1])})`;
+      }
       return html.replace(/<[^>]+>/g, ''); // p — 去掉行内标签
     }).join('\n\n');
   }
@@ -1167,6 +1236,180 @@
       errEl.textContent = e.message || '删除失败，请重试';
       btn.disabled = false;
       btn.textContent = '删除';
+    }
+  }
+
+  /* ========== 图片 / 头像 上传 ========== */
+
+  // 读文件为 base64（不含 data: 前缀）
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(new Error('读取图片失败'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 把二进制文件上传到仓库指定路径，返回该路径（相对地址）
+  async function admUploadBinary(path, file, message) {
+    const token = localStorage.getItem('admToken');
+    const repo  = localStorage.getItem('admRepo');
+    if (!token || !repo) throw new Error('未登录，请先配置');
+    const b64 = await fileToBase64(file);
+    const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message, content: b64 })
+    });
+    if (res.status === 403) throw new Error('上传失败（403），请检查 Token 写权限');
+    if (!res.ok) throw new Error(`图片上传失败（${res.status}）`);
+    return path;
+  }
+
+  // 生成安全且唯一的图片路径
+  function buildImagePath(file) {
+    const dot  = file.name.lastIndexOf('.');
+    const ext  = (dot >= 0 ? file.name.slice(dot + 1) : 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+    return `images/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  }
+
+  // --- 正文里插入图片：触发文件选择 ---
+  function admInsertImage() {
+    if (!localStorage.getItem('admToken')) {
+      document.getElementById('edErr').textContent = '请先登录后台再上传图片';
+      return;
+    }
+    document.getElementById('imgFile').value = '';
+    document.getElementById('imgFile').click();
+  }
+
+  // --- 正文图片：上传并在光标处插入 markdown ---
+  async function admUploadImage(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const errEl = document.getElementById('edErr');
+    const btn   = document.getElementById('imgBtn');
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = '上传中…';
+    try {
+      const path = buildImagePath(file);
+      await admUploadBinary(path, file, `上传图片：${path}`);
+      const ta = document.getElementById('edBody');
+      const alt = file.name.replace(/\.[^.]+$/, '');
+      const snippet = `\n\n![${alt}](${path})\n\n`;
+      const start = ta.selectionStart ?? ta.value.length;
+      const end   = ta.selectionEnd ?? ta.value.length;
+      ta.value = ta.value.slice(0, start) + snippet + ta.value.slice(end);
+      const pos = start + snippet.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    } catch (e) {
+      errEl.textContent = e.message || '图片上传失败';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg> 插入图片';
+    }
+  }
+
+  /* ========== 站点设置（头像） ========== */
+
+  let settingsAvatarImg = '';   // 当前待保存的头像图片地址（空 = 用文字头像）
+
+  function admOpenSettings() {
+    settingsAvatarImg = CONFIG.avatarImg || '';
+    document.getElementById('setAvatarText').value = CONFIG.avatarText || '';
+    document.getElementById('settingsErr').textContent = '';
+    document.getElementById('settingsOk').textContent  = '';
+    renderAvatarPreview();
+    admShowScreen('admSettings');
+  }
+
+  function renderAvatarPreview() {
+    const box = document.getElementById('setAvatarPreview');
+    if (settingsAvatarImg) {
+      box.innerHTML = `<img src="${settingsAvatarImg}" alt="头像预览">`;
+    } else {
+      box.textContent = (document.getElementById('setAvatarText').value || 'A').slice(0, 2);
+    }
+  }
+
+  // 文字头像输入时同步预览
+  document.getElementById('setAvatarText').addEventListener('input', () => {
+    if (!settingsAvatarImg) renderAvatarPreview();
+  });
+
+  function admClearAvatar() {
+    settingsAvatarImg = '';
+    renderAvatarPreview();
+  }
+
+  async function admUploadAvatar(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const errEl = document.getElementById('settingsErr');
+    errEl.textContent = '';
+    const box = document.getElementById('setAvatarPreview');
+    box.textContent = '…';
+    try {
+      const dot = file.name.lastIndexOf('.');
+      const ext = (dot >= 0 ? file.name.slice(dot + 1) : 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+      const path = `images/avatar-${Date.now()}.${ext}`;
+      await admUploadBinary(path, file, `更新头像：${path}`);
+      settingsAvatarImg = path;
+      renderAvatarPreview();
+    } catch (e) {
+      errEl.textContent = e.message || '头像上传失败';
+      renderAvatarPreview();
+    }
+  }
+
+  // 把头像设置写回 index.html 的 CONFIG
+  function applyAvatarToConfig(content, avatarText, avatarImg) {
+    // 更新 avatarText
+    if (/avatarText:\s*'[^']*'/.test(content)) {
+      content = content.replace(/avatarText:\s*'[^']*'/, `avatarText: '${avatarText.replace(/'/g, "\\'")}'`);
+    }
+    // 更新 / 新增 / 注释 avatarImg 行（匹配已启用或被注释的形式）
+    const imgLineRe = /^[ \t]*(?:\/\/\s*)?avatarImg:\s*'[^']*',.*$/m;
+    const newImgLine = avatarImg
+      ? `    avatarImg: '${avatarImg.replace(/'/g, "\\'")}',`
+      : `    // avatarImg: '',`;
+    if (imgLineRe.test(content)) {
+      content = content.replace(imgLineRe, newImgLine);
+    } else {
+      // 没有 avatarImg 行则插到 avatarText 行之后
+      content = content.replace(/^([ \t]*avatarText:\s*'[^']*',.*)$/m, `$1\n${newImgLine}`);
+    }
+    return content;
+  }
+
+  async function admSaveSettings() {
+    const errEl = document.getElementById('settingsErr');
+    const okEl  = document.getElementById('settingsOk');
+    const btn   = document.getElementById('settingsSaveBtn');
+    errEl.textContent = ''; okEl.textContent = '';
+    const avatarText = (document.getElementById('setAvatarText').value.trim() || 'A').slice(0, 2);
+    btn.disabled = true;
+    const label = btn.innerHTML;
+    btn.textContent = '保存中…';
+    try {
+      await admGitWrite(current => applyAvatarToConfig(current, avatarText, settingsAvatarImg), '更新站点设置：头像');
+      // 同步到当前页面
+      CONFIG.avatarText = avatarText;
+      CONFIG.avatarImg  = settingsAvatarImg || undefined;
+      applyConfig();
+      okEl.textContent = '✓ 已保存！约 1 分钟后全站生效。';
+    } catch (e) {
+      errEl.textContent = e.message || '保存失败，请重试';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = label;
     }
   }
 </script>
