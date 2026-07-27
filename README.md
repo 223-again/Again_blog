@@ -19,6 +19,16 @@
 
 打开 `index.html`，找到脚本顶部的 `CONFIG` 配置区，修改站名、昵称、关于我、社交链接等即可。文章内容在同一脚本的 `posts` 数组里。
 
+## 用 Obsidian 写文章
+
+`posts/` 文件夹是文章的真相源，每篇文章是一个 `.md` 文件，可直接在 Obsidian 里编辑。写完在仓库根目录运行：
+
+```bash
+python sync.py
+```
+
+脚本会读取 `posts/*.md` 并重建 `index.html` 里的 `posts` 数组，然后 `git push` 即可。详见 [`posts/README.md`](posts/README.md)。网页后台的发布功能不受影响，两者并存。
+
 ## 部署
 
 已托管于 GitHub Pages。推送到 `main` 分支后自动更新。
